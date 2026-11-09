@@ -1,0 +1,6 @@
+{
+  "name": "Simply Lemon - Retro AI Social Media Manager",
+  "description": "Retro 8-bit AI-powered social media command center that automates strategy, Canva design templates, copywriting, and real-time audience analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
