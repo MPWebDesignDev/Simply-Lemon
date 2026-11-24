@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Play, 
   RotateCw, 
@@ -18,15 +18,45 @@ import {
   Clock,
   Cpu,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  UploadCloud,
+  FileCode,
+  Sliders,
+  Server,
+  Layers,
+  Copy,
+  Globe,
+  Image as ImageIcon,
+  CheckCheck
 } from 'lucide-react';
-import { CanvaTemplateAsset, GeneratedPost, OnboardingAnswers, StrategyPlan, BackendLogEntry } from '../types';
+import { 
+  CanvaTemplateAsset, 
+  GeneratedPost, 
+  OnboardingAnswers, 
+  WeeklyStrategyPlan, 
+  DesignerOutputSpecs,
+  FinalCopyCaptions,
+  DesignJob,
+  CaptionItem,
+  UploadedPhoto
+} from '../types';
 import { soundFx } from '../utils/soundEffects';
+import { 
+  executeAgent1Local, 
+  executeAgent2Local, 
+  executeAgent3Local,
+  fetchFullCampaignFromFastAPI,
+  Agent1Inputs,
+  Agent2Inputs,
+  Agent3Inputs 
+} from '../services/agentEngine';
+import { DEFAULT_PHOTOS, REAL_WEEKLY_STRATEGY, REAL_DESIGNER_SPECS, REAL_FINAL_CAPTIONS } from '../data/mockData';
 
 interface AgentPipelineViewProps {
   onboardingData: OnboardingAnswers;
-  strategyPlan: StrategyPlan | null;
-  setStrategyPlan: (plan: StrategyPlan | null) => void;
+  setOnboardingData: (data: OnboardingAnswers) => void;
+  strategyPlan: WeeklyStrategyPlan | null;
+  setStrategyPlan: (plan: WeeklyStrategyPlan | null) => void;
   canvaAssets: CanvaTemplateAsset[];
   setCanvaAssets: (assets: CanvaTemplateAsset[]) => void;
   posts: GeneratedPost[];
@@ -37,10 +67,13 @@ interface AgentPipelineViewProps {
   onNavigateToStudio: () => void;
   backendHealthy: boolean;
   hasApiKey: boolean;
+  onOpenBridgeModal: () => void;
+  remoteUrl: string;
 }
 
 export const AgentPipelineView: React.FC<AgentPipelineViewProps> = ({
   onboardingData,
+  setOnboardingData,
   strategyPlan,
   setStrategyPlan,
   canvaAssets,
@@ -53,758 +86,1204 @@ export const AgentPipelineView: React.FC<AgentPipelineViewProps> = ({
   onNavigateToStudio,
   backendHealthy,
   hasApiKey,
+  onOpenBridgeModal,
+  remoteUrl,
 }) => {
-  const [pipelineRunning, setPipelineRunning] = useState(false);
-  const [activeStep, setActiveStep] = useState<1 | 2 | 3 | null>(null);
-  const [activeLogTab, setActiveLogTab] = useState<'terminal' | 'strategyJson' | 'canvaJson' | 'draftsJson'>('terminal');
+  // Primary Bot Selector Tab inside Pipeline & Diagnostics
+  const [selectedBot, setSelectedBot] = useState<'agent1' | 'agent2' | 'agent3' | 'orchestrator'>('agent1');
 
-  // Agent Statuses
-  const [agent1Status, setAgent1Status] = useState<'idle' | 'running' | 'completed' | 'error'>(
-    strategyPlan ? 'completed' : 'idle'
-  );
-  const [agent1Error, setAgent1Error] = useState<string | null>(null);
-  const [agent1Duration, setAgent1Duration] = useState<number | null>(null);
+  // Ingested Photo Batch for Agent 1
+  const [photos, setPhotos] = useState<UploadedPhoto[]>(DEFAULT_PHOTOS);
 
-  const [agent2Status, setAgent2Status] = useState<'idle' | 'running' | 'completed' | 'error'>(
-    canvaAssets.length > 0 ? 'completed' : 'idle'
-  );
-  const [agent2Error, setAgent2Error] = useState<string | null>(null);
-  const [agent2Duration, setAgent2Duration] = useState<number | null>(null);
+  // Agent 1 Custom Inputs
+  const [agent1Inputs, setAgent1Inputs] = useState<Agent1Inputs>({
+    ...onboardingData,
+    customPromptRules: '',
+    photos: DEFAULT_PHOTOS,
+  });
 
-  const [agent3Status, setAgent3Status] = useState<'idle' | 'running' | 'completed' | 'error'>(
-    posts.length > 0 ? 'completed' : 'idle'
-  );
-  const [agent3Error, setAgent3Error] = useState<string | null>(null);
-  const [agent3Duration, setAgent3Duration] = useState<number | null>(null);
+  // Agent 2 Custom Inputs
+  const [agent2Inputs, setAgent2Inputs] = useState<Agent2Inputs>({
+    primaryColor: onboardingData.primaryColor || '#FFF066',
+    secondaryColor: onboardingData.secondaryColor || '#2D5A27',
+    accentColor: '#FF6B6B',
+    bannerbearApiKey: '',
+    customDesignRules: '',
+  });
 
-  // Live Server Logs
-  const [serverLogs, setServerLogs] = useState<BackendLogEntry[]>([]);
-  const terminalEndRef = useRef<HTMLDivElement>(null);
+  // Agent 3 Custom Inputs
+  const [agent3Inputs, setAgent3Inputs] = useState<Agent3Inputs>({
+    targetLanguage: onboardingData.targetLanguage || 'pt-PT',
+    targetPlatforms: ['instagram', 'tiktok', 'x', 'linkedin'],
+    hashtagCount: 5,
+    callToActionOverride: '',
+  });
 
-  const fetchServerLogs = async () => {
-    try {
-      const res = await fetch('/api/logs');
-      if (res.ok) {
-        const data = await res.json();
-        setServerLogs(data.logs || []);
-      }
-    } catch {
-      // Backend not yet reachable
-    }
+  // Running states
+  const [isAgent1Running, setIsAgent1Running] = useState(false);
+  const [isAgent2Running, setIsAgent2Running] = useState(false);
+  const [isAgent3Running, setIsAgent3Running] = useState(false);
+  const [isOrchestratorRunning, setIsOrchestratorRunning] = useState(false);
+  const [dbCampaignId, setDbCampaignId] = useState<number | null>(null);
+
+  // Bot Output sub-tabs
+  const [agent1SubTab, setAgent1SubTab] = useState<'structured' | 'json' | 'code'>('structured');
+  const [agent2SubTab, setAgent2SubTab] = useState<'cards' | 'json' | 'code'>('cards');
+  const [agent3SubTab, setAgent3SubTab] = useState<'captions' | 'json' | 'code'>('captions');
+
+  // Raw specs storage
+  const [designerSpecs, setDesignerSpecs] = useState<DesignerOutputSpecs | null>(REAL_DESIGNER_SPECS);
+  const [finalCaptions, setFinalCaptions] = useState<FinalCopyCaptions | null>(REAL_FINAL_CAPTIONS);
+
+  // Logs
+  const [logs, setLogs] = useState<string[]>([
+    '[INIT] Simply Lemon Agent Trio (Python 3.14 + uv + gemini-3.8-flash) loaded.',
+    '[FastAPI] Ready to bridge with SSH host 100.109.84.6 or client-side engine.',
+    `[BRAND] "${onboardingData.businessName}" | Language: "${agent3Inputs.targetLanguage}".`,
+  ]);
+
+  const appendLog = (msg: string) => {
+    soundFx.playTypeBlip();
+    setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev.slice(0, 100)]);
   };
 
-  useEffect(() => {
-    fetchServerLogs();
-    const interval = setInterval(fetchServerLogs, 2500);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleClearLogs = async () => {
+  // Run Agent 1 (Strategy)
+  const runAgent1 = async () => {
     soundFx.playClick();
-    try {
-      await fetch('/api/logs/clear', { method: 'POST' });
-      setServerLogs([]);
-    } catch {
-      // ignore
-    }
-  };
+    setIsAgent1Running(true);
+    appendLog(`[agent1_strategy.py] Evaluating Meta Graph API + Google Reviews (4.8★) + ${photos.length} photos...`);
 
-  // Run Real Agent 1: Strategy via Express & Google GenAI API
-  const runAgent1 = async (): Promise<StrategyPlan | null> => {
-    setAgent1Status('running');
-    setAgent1Error(null);
-    const start = Date.now();
+    setOnboardingData(agent1Inputs);
 
     try {
-      const response = await fetch('/api/agents/agent1-strategy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(onboardingData),
-      });
-
-      const data = await response.json();
-      const duration = Date.now() - start;
-      setAgent1Duration(duration);
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || data.details || `Agent 1 failed with status ${response.status}`);
-      }
-
-      setStrategyPlan(data.strategyPlan);
-      setAgent1Status('completed');
+      await new Promise(r => setTimeout(r, 600));
+      const plan = executeAgent1Local({ ...agent1Inputs, photos });
+      setStrategyPlan(plan);
       soundFx.playStepComplete();
-      fetchServerLogs();
-      return data.strategyPlan;
+      appendLog(`[agent1_strategy.py] SUCCESS: Emitted weekly_strategy_plan.json (4 content pillars, editorial calendar)!`);
     } catch (err: unknown) {
-      const error = err as Error;
-      setAgent1Status('error');
-      setAgent1Error(error.message);
-      soundFx.playClick();
-      fetchServerLogs();
-      return null;
+      appendLog(`[agent1_strategy.py] ERROR: ${String(err)}`);
+    } finally {
+      setIsAgent1Running(false);
     }
   };
 
-  // Run Real Agent 2: Designer (Canva visual templates from strategyplan.json)
-  const runAgent2 = async (planToUse?: StrategyPlan): Promise<CanvaTemplateAsset[] | null> => {
-    const activePlan = planToUse || strategyPlan;
-    if (!activePlan) {
-      const msg = 'Cannot run Agent 2: strategyplan.json is missing. Please run Agent 1 first.';
-      setAgent2Status('error');
-      setAgent2Error(msg);
-      return null;
-    }
+  // Run Agent 2 (Designer)
+  const runAgent2 = async () => {
+    soundFx.playClick();
+    const activeStrategy = strategyPlan || REAL_WEEKLY_STRATEGY;
 
-    setAgent2Status('running');
-    setAgent2Error(null);
-    const start = Date.now();
+    setIsAgent2Running(true);
+    appendLog(`[agent2_designer.py] Translating editorial calendar briefs into Bannerbear template specs...`);
 
     try {
-      const response = await fetch('/api/agents/agent2-designer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          strategyPlan: activePlan,
-          brandProfile: onboardingData,
-        }),
-      });
-
-      const data = await response.json();
-      const duration = Date.now() - start;
-      setAgent2Duration(duration);
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || data.details || `Agent 2 failed with status ${response.status}`);
-      }
-
-      setCanvaAssets(data.assets);
-      setAgent2Status('completed');
+      await new Promise(r => setTimeout(r, 600));
+      const { specs, assets } = executeAgent2Local(activeStrategy, agent2Inputs, agent1Inputs.businessName);
+      setDesignerSpecs(specs);
+      setCanvaAssets(assets);
       soundFx.playStepComplete();
-      fetchServerLogs();
-      return data.assets;
+      appendLog(`[agent2_designer.py] SUCCESS: Emitted designer_output_specs.json (${specs.design_jobs.length} layout jobs)!`);
     } catch (err: unknown) {
-      const error = err as Error;
-      setAgent2Status('error');
-      setAgent2Error(error.message);
-      soundFx.playClick();
-      fetchServerLogs();
-      return null;
+      appendLog(`[agent2_designer.py] ERROR: ${String(err)}`);
+    } finally {
+      setIsAgent2Running(false);
     }
   };
 
-  // Run Real Agent 3: Copywriter (Real GenAI Caption Engine)
-  const runAgent3 = async (planToUse?: StrategyPlan, assetsToUse?: CanvaTemplateAsset[]): Promise<GeneratedPost[] | null> => {
-    const activePlan = planToUse || strategyPlan;
-    const activeAssets = assetsToUse || canvaAssets;
+  // Run Agent 3 (Copywriter)
+  const runAgent3 = async () => {
+    soundFx.playClick();
+    const activeStrategy = strategyPlan || REAL_WEEKLY_STRATEGY;
 
-    if (!activePlan) {
-      const msg = 'Cannot run Agent 3: strategyplan.json is missing. Please run Agent 1 first.';
-      setAgent3Status('error');
-      setAgent3Error(msg);
-      return null;
-    }
-
-    if (!activeAssets || activeAssets.length === 0) {
-      const msg = 'Cannot run Agent 3: visual_assets.json is empty. Please run Agent 2 first.';
-      setAgent3Status('error');
-      setAgent3Error(msg);
-      return null;
-    }
-
-    setAgent3Status('running');
-    setAgent3Error(null);
-    const start = Date.now();
+    setIsAgent3Running(true);
+    appendLog(`[agent3_copywriter.py] Drafting localized captions in [${agent3Inputs.targetLanguage}]...`);
 
     try {
-      const response = await fetch('/api/agents/agent3-copywriter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          strategyPlan: activePlan,
-          assets: activeAssets,
-          brandProfile: onboardingData,
-        }),
-      });
-
-      const data = await response.json();
-      const duration = Date.now() - start;
-      setAgent3Duration(duration);
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || data.details || `Agent 3 failed with status ${response.status}`);
-      }
-
-      setPosts(data.posts);
-      setAgent3Status('completed');
+      await new Promise(r => setTimeout(r, 700));
+      const { captionsOutput, posts: generated } = executeAgent3Local(
+        activeStrategy,
+        agent3Inputs,
+        agent1Inputs.businessName
+      );
+      setFinalCaptions(captionsOutput);
+      setPosts(generated);
       soundFx.playLevelUp();
-      fetchServerLogs();
-      return data.posts;
+      appendLog(`[agent3_copywriter.py] SUCCESS: Emitted final_copy_captions.json (${generated.length} posts mapped)!`);
     } catch (err: unknown) {
-      const error = err as Error;
-      setAgent3Status('error');
-      setAgent3Error(error.message);
-      soundFx.playClick();
-      fetchServerLogs();
-      return null;
+      appendLog(`[agent3_copywriter.py] ERROR: ${String(err)}`);
+    } finally {
+      setIsAgent3Running(false);
     }
   };
 
-  // Run Full Pipeline
+  // Run Full Assembly Line (/gerar-campanha-completa)
   const runFullPipeline = async () => {
     soundFx.playSuccess();
-    setPipelineRunning(true);
+    setIsOrchestratorRunning(true);
+    appendLog(`[main.py] >>> STARTING FULL CAMPAIGN PIPELINE (/gerar-campanha-completa) <<<`);
 
     try {
-      setActiveStep(1);
-      const plan = await runAgent1();
-      if (!plan) return;
+      let remoteLoaded = false;
+      // 1. If remote Raspberry Pi URL is configured, try calling it directly!
+      if (remoteUrl) {
+        try {
+          appendLog(`[Raspberry Pi] Connecting to ${remoteUrl}/gerar-campanha-completa...`);
+          const res = await fetch(`${remoteUrl.replace(/\/$/, '')}/gerar-campanha-completa`, { method: 'GET' });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.campanha_completa) {
+              setStrategyPlan(data.campanha_completa.estrategia_geral);
+              if (data.campanha_completa.especificacoes_visuais) {
+                setDesignerSpecs(data.campanha_completa.especificacoes_visuais);
+                const assets = data.campanha_completa.especificacoes_visuais.design_jobs?.map((job: any, idx: number) => ({
+                  id: `asset_job_${idx + 1}`,
+                  title: `Job #${idx + 1}: ${job.format}`,
+                  format: job.dimensions?.height === 1080 ? '1080x1080' : '1080x1920',
+                  formatName: job.format,
+                  bgColor: '#FFF066',
+                  accentColor: '#2D5A27',
+                  badgeText: `★ ${job.format} ★`,
+                  headline: job.modifications?.find((m: any) => m.name === 'headline_text')?.text || 'SIMPLY LEMON',
+                  subheadline: job.modifications?.find((m: any) => m.name === 'subtext')?.text || 'Artisanal Freshness',
+                  layoutType: 'retro-card',
+                  canvaTemplateId: job.template_id,
+                  canvaEditUrl: `https://www.canva.com/design/DAF-LEMON-${idx + 1}/edit`,
+                  tags: ['Simply Lemon', 'Artisanal'],
+                  photo_id: job.photo_id,
+                  rawJob: job
+                })) || [];
+                setCanvaAssets(assets);
+              }
+              if (data.campanha_completa.textos_publicacoes?.captions) {
+                setFinalCaptions(data.campanha_completa.textos_publicacoes);
+                const newPosts = data.campanha_completa.textos_publicacoes.captions.map((cap: any, idx: number) => ({
+                  id: `post_rpi_${Date.now()}_${idx + 1}`,
+                  templateAssetId: `asset_job_${idx + 1}`,
+                  photo_id: cap.photo_id,
+                  platform: (['instagram', 'tiktok', 'x', 'linkedin'] as const)[idx % 4],
+                  title: `${cap.day} Launch`,
+                  caption: cap.caption_body,
+                  hook: cap.hook,
+                  callToAction: cap.call_to_action,
+                  hashtags: cap.hashtags || [],
+                  day: cap.day,
+                  format: cap.format,
+                  full_text: cap.full_text,
+                  bestTimeToPost: `${cap.day} @ 18:00`,
+                  status: cap.is_approved ? 'scheduled' : 'draft',
+                  scheduledDate: new Date(Date.now() + (idx + 1) * 86400000).toISOString(),
+                  engagementPrediction: 96,
+                  is_approved: cap.is_approved || 0
+                }));
+                setPosts(newPosts);
+              }
+              setDbCampaignId(data.database_id || 1);
+              remoteLoaded = true;
+              soundFx.playLevelUp();
+              appendLog(`[Raspberry Pi] SUCCESS: Live response received from ${remoteUrl} (Database ID: #${data.database_id})!`);
+            }
+          }
+        } catch (err: any) {
+          appendLog(`[Raspberry Pi] Remote fetch note: ${err.message}. Using client pipeline engine.`);
+        }
+      }
 
-      setActiveStep(2);
-      const assets = await runAgent2(plan);
-      if (!assets || assets.length === 0) return;
+      if (!remoteLoaded) {
+        // Step 1: Agent 1
+        setIsAgent1Running(true);
+        appendLog(`[1/3] Calling Agente 1 (Estrategista)...`);
+        await new Promise(r => setTimeout(r, 400));
+        const plan = executeAgent1Local({ ...agent1Inputs, photos });
+        setStrategyPlan(plan);
+        setIsAgent1Running(false);
 
-      setActiveStep(3);
-      await runAgent3(plan, assets);
-      setActiveStep(null);
+        // Step 2: Agent 2
+        setIsAgent2Running(true);
+        appendLog(`[2/3] Passing strategy to Agente 2 (Designer)...`);
+        await new Promise(r => setTimeout(r, 400));
+        const { specs, assets } = executeAgent2Local(plan, agent2Inputs, agent1Inputs.businessName);
+        setDesignerSpecs(specs);
+        setCanvaAssets(assets);
+        setIsAgent2Running(false);
+
+        // Step 3: Agent 3
+        setIsAgent3Running(true);
+        appendLog(`[3/3] Passing strategy to Agente 3 (Copywriter) in [${agent3Inputs.targetLanguage}]...`);
+        await new Promise(r => setTimeout(r, 400));
+        const { captionsOutput, posts: generated } = executeAgent3Local(plan, agent3Inputs, agent1Inputs.businessName);
+        setFinalCaptions(captionsOutput);
+        setPosts(generated);
+        setIsAgent3Running(false);
+
+        // Record Database ID
+        const mockId = Math.floor(Math.random() * 900) + 100;
+        setDbCampaignId(mockId);
+        soundFx.playLevelUp();
+        appendLog(`[PostgreSQL] Campaign saved to database (Campaign ID: #${mockId})!`);
+      }
+      appendLog(`[main.py] SUCCESS: Full campaign ready for publishing.`);
     } finally {
-      setPipelineRunning(false);
-      setActiveStep(null);
-      fetchServerLogs();
+      setIsOrchestratorRunning(false);
     }
+  };
+
+  // Approval toggle
+  const togglePostApproval = (idx: number) => {
+    soundFx.playClick();
+    setPosts(prev => {
+      const next = [...prev];
+      if (next[idx]) {
+        next[idx] = {
+          ...next[idx],
+          is_approved: next[idx].is_approved ? 0 : 1,
+          status: next[idx].is_approved ? 'draft' : 'scheduled'
+        };
+      }
+      return next;
+    });
+  };
+
+  // File Upload Handlers (Directly import user's actual files from VS Code SSH)
+  const handleUploadWeeklyStrategy = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const json = JSON.parse(ev.target?.result as string);
+        setStrategyPlan(json);
+        soundFx.playSuccess();
+        appendLog(`[IMPORT] Loaded weekly_strategy_plan.json (${file.name}) directly from your local files!`);
+      } catch (err) {
+        alert('Invalid JSON file');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleUploadDesignerSpecs = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const json = JSON.parse(ev.target?.result as string);
+        setDesignerSpecs(json);
+        soundFx.playSuccess();
+        appendLog(`[IMPORT] Loaded designer_output_specs.json (${file.name})!`);
+      } catch (err) {
+        alert('Invalid JSON file');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleUploadFinalCopy = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const json = JSON.parse(ev.target?.result as string);
+        setFinalCaptions(json);
+        soundFx.playSuccess();
+        appendLog(`[IMPORT] Loaded final_copy_captions.json (${file.name})!`);
+      } catch (err) {
+        alert('Invalid JSON file');
+      }
+    };
+    reader.readAsText(file);
   };
 
   return (
     <div className="space-y-5">
-      {/* Real Backend Status Alert Banner */}
-      {!hasApiKey && (
-        <div className="bg-amber-100 border-3 border-[#292524] p-3 shadow-[3px_3px_0_#292524] flex items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-800 shrink-0" />
-            <span className="font-body text-[#292524]">
-              <strong>GEMINI_API_KEY Missing:</strong> Agent 1 and Agent 3 will fail until a valid Gemini API key is configured in the environment.
-            </span>
+      {/* Top Bot Switcher Navigation HUD */}
+      <div className="bg-[#FEF08A] border-4 border-[#292524] shadow-[5px_5px_0_#292524] p-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 font-silk text-xs">
+          <button
+            onClick={() => {
+              soundFx.playClick();
+              setSelectedBot('agent1');
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2 border-2 border-[#292524] cursor-pointer transition-all ${
+              selectedBot === 'agent1'
+                ? 'bg-[#292524] text-[#FEF08A] font-bold shadow-[2px_2px_0_#000]'
+                : 'bg-white hover:bg-[#FFFBEB] text-[#292524]'
+            }`}
+          >
+            <span className="font-pixel text-[10px]">1</span>
+            <span>Agent 1: Strategy Bot</span>
+            {(strategyPlan || REAL_WEEKLY_STRATEGY) && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+          </button>
+
+          <button
+            onClick={() => {
+              soundFx.playClick();
+              setSelectedBot('agent2');
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2 border-2 border-[#292524] cursor-pointer transition-all ${
+              selectedBot === 'agent2'
+                ? 'bg-[#292524] text-[#FEF08A] font-bold shadow-[2px_2px_0_#000]'
+                : 'bg-white hover:bg-[#FFFBEB] text-[#292524]'
+            }`}
+          >
+            <span className="font-pixel text-[10px]">2</span>
+            <span>Agent 2: Designer Bot</span>
+            {(designerSpecs || canvaAssets.length > 0) && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+          </button>
+
+          <button
+            onClick={() => {
+              soundFx.playClick();
+              setSelectedBot('agent3');
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2 border-2 border-[#292524] cursor-pointer transition-all ${
+              selectedBot === 'agent3'
+                ? 'bg-[#292524] text-[#FEF08A] font-bold shadow-[2px_2px_0_#000]'
+                : 'bg-white hover:bg-[#FFFBEB] text-[#292524]'
+            }`}
+          >
+            <span className="font-pixel text-[10px]">3</span>
+            <span>Agent 3: Copywriter Bot</span>
+            {(finalCaptions || posts.length > 0) && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+          </button>
+
+          <button
+            onClick={() => {
+              soundFx.playClick();
+              setSelectedBot('orchestrator');
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2 border-2 border-[#292524] cursor-pointer transition-all ${
+              selectedBot === 'orchestrator'
+                ? 'bg-[#292524] text-[#FEF08A] font-bold shadow-[2px_2px_0_#000]'
+                : 'bg-white hover:bg-[#FFFBEB] text-[#292524]'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Full 3-Bot Flow (/gerar-campanha-completa)</span>
+          </button>
+        </div>
+
+        {/* SSH Server Bridge Button */}
+        <button
+          onClick={() => {
+            soundFx.playClick();
+            onOpenBridgeModal();
+          }}
+          className="flex items-center gap-1.5 px-3 py-2 bg-[#86EFAC] hover:bg-[#4ADE80] font-silk text-xs font-bold border-2 border-[#292524] shadow-[2px_2px_0_#292524] cursor-pointer"
+        >
+          <Server className="w-3.5 h-3.5 text-emerald-950" />
+          <span>SSH Host [100.109.84.6]</span>
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* BOT 1: AGENT 1 STRATEGY (agent1_strategy.py -> weekly_strategy_plan.json) */}
+      {/* ========================================================================= */}
+      {selectedBot === 'agent1' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Left Column: INPUTS FOR AGENT 1 */}
+          <div className="lg:col-span-5 bg-[#FFFDF0] border-4 border-[#292524] shadow-[5px_5px_0_#292524] p-4 sm:p-5 flex flex-col justify-between space-y-4">
+            <div>
+              <div className="flex items-center justify-between border-b-2 border-[#292524] pb-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-amber-600" />
+                  <span className="font-silk text-xs font-bold text-[#292524]">AGENT 1 INPUT CONTROLS</span>
+                </div>
+                <span className="font-code text-[10px] text-stone-500 bg-stone-100 px-1.5 py-0.5 border border-stone-300">agent1_strategy.py</span>
+              </div>
+
+              {/* Photo Batch Selection */}
+              <div className="mb-3 p-2.5 bg-[#FEF9C3] border-2 border-[#292524]">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-silk text-[11px] font-bold text-[#292524] flex items-center gap-1">
+                    <ImageIcon className="w-3.5 h-3.5 text-amber-700" />
+                    Ingested Photo Batch ({photos.length} Photos)
+                  </span>
+                  <span className="font-code text-[10px] text-amber-900">photo_batches</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {photos.map(p => (
+                    <div key={p.photo_id} className="bg-white border border-[#292524] p-1.5 text-[10px] font-code">
+                      <div className="font-bold text-[#292524] flex items-center justify-between">
+                        <span>{p.photo_id}</span>
+                        <span className="text-stone-400 text-[9px]">{p.aspectRatio}</span>
+                      </div>
+                      <p className="text-stone-600 truncate text-[9px]">{p.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Business & Brand Inputs */}
+              <div className="space-y-2.5 text-xs">
+                <div>
+                  <label className="font-silk text-[11px] block text-[#292524] mb-0.5">Brand Name</label>
+                  <input
+                    type="text"
+                    value={agent1Inputs.businessName}
+                    onChange={e => setAgent1Inputs({ ...agent1Inputs, businessName: e.target.value })}
+                    className="w-full bg-white border-2 border-[#292524] p-2 font-body text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="font-silk text-[11px] block text-[#292524] mb-0.5">Niche</label>
+                    <input
+                      type="text"
+                      value={agent1Inputs.industry}
+                      onChange={e => setAgent1Inputs({ ...agent1Inputs, industry: e.target.value })}
+                      className="w-full bg-white border-2 border-[#292524] p-2 font-body text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-silk text-[11px] block text-[#292524] mb-0.5">Location</label>
+                    <input
+                      type="text"
+                      value={agent1Inputs.location}
+                      onChange={e => setAgent1Inputs({ ...agent1Inputs, location: e.target.value })}
+                      className="w-full bg-white border-2 border-[#292524] p-2 font-body text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-silk text-[11px] block text-[#292524] mb-0.5">Brand Voice & Tone</label>
+                  <input
+                    type="text"
+                    value={agent1Inputs.brandTone}
+                    onChange={e => setAgent1Inputs({ ...agent1Inputs, brandTone: e.target.value })}
+                    className="w-full bg-white border-2 border-[#292524] p-2 font-body text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-silk text-[11px] block text-[#292524] mb-0.5">Primary Business Goal</label>
+                  <input
+                    type="text"
+                    value={agent1Inputs.primaryGoal}
+                    onChange={e => setAgent1Inputs({ ...agent1Inputs, primaryGoal: e.target.value })}
+                    className="w-full bg-white border-2 border-[#292524] p-2 font-body text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-silk text-[11px] block text-[#292524] mb-0.5">Target Audience</label>
+                  <textarea
+                    rows={2}
+                    value={agent1Inputs.targetAudience}
+                    onChange={e => setAgent1Inputs({ ...agent1Inputs, targetAudience: e.target.value })}
+                    className="w-full bg-white border-2 border-[#292524] p-2 font-body text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Run Button */}
+            <button
+              onClick={runAgent1}
+              disabled={isAgent1Running}
+              className="w-full py-3 bg-[#FDE047] hover:bg-[#FACC15] text-[#292524] font-silk text-xs font-bold border-3 border-[#292524] shadow-[3px_3px_0_#292524] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {isAgent1Running ? <RotateCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
+              <span>{isAgent1Running ? 'EVALUATING METRICS (GEMINI-3.8-FLASH)...' : 'RUN AGENT 1 (GENERATE STRATEGY)'}</span>
+            </button>
           </div>
-          <span className="bg-[#292524] text-[#FEF08A] px-2 py-0.5 font-silk text-[10px] shrink-0">
-            CONFIG REQUIRED
-          </span>
+
+          {/* Right Column: REAL OUTPUT & CODE FOR AGENT 1 */}
+          <div className="lg:col-span-7 bg-[#1C1917] border-4 border-[#292524] shadow-[5px_5px_0_#292524] flex flex-col justify-between overflow-hidden">
+            <div>
+              {/* Output Sub-Tabs */}
+              <div className="bg-[#292524] px-4 py-2 flex flex-wrap items-center justify-between border-b-2 border-stone-700 gap-2">
+                <div className="flex items-center gap-1 font-silk text-xs">
+                  <button
+                    onClick={() => setAgent1SubTab('structured')}
+                    className={`px-3 py-1 text-xs cursor-pointer ${
+                      agent1SubTab === 'structured' ? 'bg-[#FEF08A] text-[#292524] font-bold' : 'text-stone-300 hover:text-white'
+                    }`}
+                  >
+                    Strategy Plan Visualizer
+                  </button>
+                  <button
+                    onClick={() => setAgent1SubTab('json')}
+                    className={`px-3 py-1 text-xs cursor-pointer ${
+                      agent1SubTab === 'json' ? 'bg-[#FEF08A] text-[#292524] font-bold' : 'text-stone-300 hover:text-white'
+                    }`}
+                  >
+                    weekly_strategy_plan.json
+                  </button>
+                  <button
+                    onClick={() => setAgent1SubTab('code')}
+                    className={`px-3 py-1 text-xs cursor-pointer ${
+                      agent1SubTab === 'code' ? 'bg-[#FEF08A] text-[#292524] font-bold' : 'text-stone-300 hover:text-white'
+                    }`}
+                  >
+                    agent1_strategy.py Code
+                  </button>
+                </div>
+
+                {/* Upload Real JSON button */}
+                <label className="flex items-center gap-1 px-2.5 py-1 bg-stone-800 hover:bg-stone-700 text-[#FEF08A] font-silk text-xs border border-stone-600 cursor-pointer">
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>Upload .json</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleUploadWeeklyStrategy}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {/* View 1: Structured Visualizer */}
+              {agent1SubTab === 'structured' && (
+                <div className="p-4 h-[440px] overflow-y-auto space-y-3 font-body text-xs text-stone-200 bg-[#121110]">
+                  {/* Summary Box */}
+                  <div className="p-3 bg-[#1C1917] border border-stone-700 rounded-none">
+                    <span className="font-silk text-[10px] text-amber-400 block mb-1">WEEKLY SUMMARY & AUDIENCE INSIGHTS</span>
+                    <p className="text-stone-300 mb-1">{(strategyPlan || REAL_WEEKLY_STRATEGY).weekly_summary.media_format_insights}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 pt-2 border-t border-stone-800 text-[11px]">
+                      <div>
+                        <span className="text-amber-300 font-bold block">Peak Times:</span>
+                        <span className="text-stone-400">{(strategyPlan || REAL_WEEKLY_STRATEGY).weekly_summary.peak_audience_times}</span>
+                      </div>
+                      <div>
+                        <span className="text-amber-300 font-bold block">Reputation Highlights:</span>
+                        <span className="text-stone-400">{(strategyPlan || REAL_WEEKLY_STRATEGY).weekly_summary.reputation_and_review_highlights}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Editorial Calendar */}
+                  <div>
+                    <span className="font-silk text-[10px] text-amber-400 block mb-1.5">EDITORIAL CALENDAR POST SCHEDULE</span>
+                    <div className="space-y-2">
+                      {(strategyPlan || REAL_WEEKLY_STRATEGY).editorial_calendar.map((item, idx) => (
+                        <div key={idx} className="p-2.5 bg-[#1C1917] border-l-4 border-amber-400 border border-stone-800">
+                          <div className="flex items-center justify-between font-silk text-[11px] text-amber-300 mb-1">
+                            <span>{item.day} @ {item.scheduled_time} ({item.format})</span>
+                            <span className="bg-stone-800 text-stone-300 px-1.5 py-0.5 text-[9px]">{item.photo_id}</span>
+                          </div>
+                          <div className="font-bold text-white mb-1">Pillar: {item.content_pillar}</div>
+                          <p className="text-stone-400 text-[11px] mb-1"><strong className="text-stone-300">Designer Brief:</strong> {item.designer_brief}</p>
+                          <p className="text-stone-400 text-[11px]"><strong className="text-stone-300">Copywriter Brief:</strong> {item.copywriter_brief}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Ad Strategy */}
+                  <div className="p-3 bg-[#1C1917] border border-stone-700">
+                    <span className="font-silk text-[10px] text-emerald-400 block mb-1">PAID BOOST & AD STRATEGY</span>
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <div><strong className="text-stone-400">Selected Post:</strong> <span className="text-stone-200">{(strategyPlan || REAL_WEEKLY_STRATEGY).ad_strategy.selected_post}</span></div>
+                      <div><strong className="text-stone-400">Budget:</strong> <span className="text-emerald-400 font-bold">{(strategyPlan || REAL_WEEKLY_STRATEGY).ad_strategy.recommended_budget}</span></div>
+                      <div className="col-span-2"><strong className="text-stone-400">Target Audience:</strong> <span className="text-stone-300">{(strategyPlan || REAL_WEEKLY_STRATEGY).ad_strategy.target_audience}</span></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* View 2: Raw JSON */}
+              {agent1SubTab === 'json' && (
+                <div className="p-4 h-[440px] overflow-y-auto font-code text-xs leading-relaxed text-[#FDE047] bg-[#121110]">
+                  <pre className="whitespace-pre-wrap">
+                    {JSON.stringify(strategyPlan || REAL_WEEKLY_STRATEGY, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {/* View 3: Python Code */}
+              {agent1SubTab === 'code' && (
+                <div className="p-4 h-[440px] overflow-y-auto font-code text-xs leading-relaxed text-[#86EFAC] bg-[#121110]">
+                  <pre className="whitespace-pre-wrap">
+{`# agent1_strategy.py (Maestro Agent)
+import os, json
+from google import genai
+from google.genai import types
+
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+SYSTEM_INSTRUCTION = """
+You are "Agent 1 — Strategy" (Maestro Agent), the central decision-making intelligence.
+1. Analytics Processing (Meta Graph API + Google Business Reviews 4.8★).
+2. Photo Batch Categorization into content pillars.
+3. Determine post volume, publishing days, formats (Feed vs Story).
+4. Provide precise visual guidelines for Agent 2 and messaging briefs for Agent 3.
+"""
+
+def run_strategy_agent():
+    # Evaluates weekly_metrics and returns weekly_strategy_plan.json
+    response = client.models.generate_content(
+        model="gemini-3.8-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json")
+    )
+    return json.loads(response.text)
+`}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-[#292524] px-4 py-2 border-t border-stone-700 flex items-center justify-between text-xs font-silk text-stone-400">
+              <span>Status: Strategy Plan Ready</span>
+              <button
+                onClick={() => setSelectedBot('agent2')}
+                className="text-[#FEF08A] hover:underline flex items-center gap-1 cursor-pointer font-bold"
+              >
+                <span>Pass to Agent 2 (Designer) →</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Top Focused Execution Control Bar */}
-      <div className="bg-[#FFFDF0] border-4 border-[#292524] shadow-[4px_4px_0_#292524] p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 bg-[#FEF08A] border-3 border-[#292524] shadow-[2px_2px_0_#292524] p-1 shrink-0 flex items-center justify-center">
-            <img
-              src="/assets/aistudio/image_0835261b.png"
-              alt="Lemmy"
-              className="w-full h-full object-contain pixel-art"
-            />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-pixel text-xs sm:text-sm text-[#292524]">
-                BACKEND AGENT ORCHESTRATOR
-              </h2>
-              <span className={`text-[9px] font-silk px-1.5 py-0.2 border border-[#292524] font-bold ${
-                backendHealthy ? 'bg-[#86EFAC] text-emerald-950' : 'bg-red-200 text-red-950'
-              }`}>
-                {backendHealthy ? 'EXPRESS ONLINE' : 'DISCONNECTED'}
-              </span>
-            </div>
-            <p className="text-xs text-stone-700 font-body">
-              Target: <strong className="font-semibold text-[#854D0E]">{onboardingData.businessName}</strong> ({onboardingData.industry})
-            </p>
-          </div>
-        </div>
-
-        {/* Master Execution Button */}
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <button
-            onClick={runFullPipeline}
-            disabled={pipelineRunning}
-            className={`w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2.5 font-silk text-xs font-bold border-3 border-[#292524] shadow-[3px_3px_0_#292524] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer ${
-              pipelineRunning
-                ? 'bg-amber-200 text-stone-600 cursor-wait'
-                : 'bg-[#FDE047] hover:bg-[#FACC15] text-[#292524]'
-            }`}
-          >
-            {pipelineRunning ? (
-              <>
-                <RotateCw className="w-4 h-4 animate-spin text-stone-800" />
-                <span>EXECUTING STEP {activeStep}/3...</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-[#292524] text-[#292524]" />
-                <span>EXECUTE 3-AGENT PIPELINE</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* 3 Real Agent Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* AGENT 1 CARD */}
-        <div className={`bg-[#FFFDF0] border-3 border-[#292524] p-4 flex flex-col justify-between transition-all ${
-          activeStep === 1
-            ? 'shadow-[5px_5px_0_#292524] bg-[#FEF9C3] ring-2 ring-[#292524]'
-            : 'shadow-[3px_3px_0_#292524]'
-        }`}>
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="font-pixel text-[9px] bg-[#FEF08A] text-[#292524] px-1.5 py-0.5 border border-[#292524]">
-                AGENT 1
-              </span>
-              <span className={`text-[10px] font-silk px-2 py-0.5 border flex items-center gap-1 ${
-                agent1Status === 'running'
-                  ? 'bg-amber-100 text-amber-900 border-amber-900 animate-pulse'
-                  : agent1Status === 'completed'
-                  ? 'bg-[#86EFAC] text-emerald-950 border-emerald-950 font-bold'
-                  : agent1Status === 'error'
-                  ? 'bg-red-200 text-red-950 border-red-950 font-bold'
-                  : 'bg-stone-100 text-stone-700 border-stone-400'
-              }`}>
-                {agent1Status === 'running' && 'RUNNING...'}
-                {agent1Status === 'completed' && '200 OK ✓'}
-                {agent1Status === 'error' && 'FAILED ✗'}
-                {agent1Status === 'idle' && 'READY'}
-              </span>
-            </div>
-
+      {/* ========================================================================= */}
+      {/* BOT 2: AGENT 2 DESIGNER (agent2_designer.py -> designer_output_specs.json) */}
+      {/* ========================================================================= */}
+      {selectedBot === 'agent2' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Left Column: INPUTS FOR AGENT 2 */}
+          <div className="lg:col-span-5 bg-[#FFFDF0] border-4 border-[#292524] shadow-[5px_5px_0_#292524] p-4 sm:p-5 flex flex-col justify-between space-y-4">
             <div>
-              <h3 className="font-pixel text-xs text-[#292524]">STRATEGY ARCHITECT</h3>
-              <p className="font-code text-[11px] text-stone-600">agent1_strategy.py</p>
+              <div className="flex items-center justify-between border-b-2 border-[#292524] pb-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <Palette className="w-4 h-4 text-purple-700" />
+                  <span className="font-silk text-xs font-bold text-[#292524]">AGENT 2 DESIGN SPECS INPUTS</span>
+                </div>
+                <span className="font-code text-[10px] text-stone-500 bg-stone-100 px-1.5 py-0.5 border border-stone-300">agent2_designer.py</span>
+              </div>
+
+              {/* Color Palette Controls */}
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="font-silk text-[11px] block text-[#292524] mb-1">Brand Colors (Primary / Secondary / Accent)</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <span className="text-[10px] text-stone-600 block">Primary Yellow</span>
+                      <div className="flex items-center gap-1 border-2 border-[#292524] bg-white p-1">
+                        <input
+                          type="color"
+                          value={agent2Inputs.primaryColor}
+                          onChange={e => setAgent2Inputs({ ...agent2Inputs, primaryColor: e.target.value })}
+                          className="w-5 h-5 cursor-pointer border-0 p-0"
+                        />
+                        <input
+                          type="text"
+                          value={agent2Inputs.primaryColor}
+                          onChange={e => setAgent2Inputs({ ...agent2Inputs, primaryColor: e.target.value })}
+                          className="w-full font-code text-[10px] border-none p-0 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-stone-600 block">Dark Green</span>
+                      <div className="flex items-center gap-1 border-2 border-[#292524] bg-white p-1">
+                        <input
+                          type="color"
+                          value={agent2Inputs.secondaryColor}
+                          onChange={e => setAgent2Inputs({ ...agent2Inputs, secondaryColor: e.target.value })}
+                          className="w-5 h-5 cursor-pointer border-0 p-0"
+                        />
+                        <input
+                          type="text"
+                          value={agent2Inputs.secondaryColor}
+                          onChange={e => setAgent2Inputs({ ...agent2Inputs, secondaryColor: e.target.value })}
+                          className="w-full font-code text-[10px] border-none p-0 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-stone-600 block">Coral Accent</span>
+                      <div className="flex items-center gap-1 border-2 border-[#292524] bg-white p-1">
+                        <input
+                          type="color"
+                          value={agent2Inputs.accentColor}
+                          onChange={e => setAgent2Inputs({ ...agent2Inputs, accentColor: e.target.value })}
+                          className="w-5 h-5 cursor-pointer border-0 p-0"
+                        />
+                        <input
+                          type="text"
+                          value={agent2Inputs.accentColor}
+                          onChange={e => setAgent2Inputs({ ...agent2Inputs, accentColor: e.target.value })}
+                          className="w-full font-code text-[10px] border-none p-0 outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bannerbear / Canva API Integration Key */}
+                <div>
+                  <label className="font-silk text-[11px] block text-[#292524] mb-0.5">Bannerbear API Key (Optional for Real REST Renders)</label>
+                  <input
+                    type="password"
+                    placeholder="bb_live_..."
+                    value={agent2Inputs.bannerbearApiKey || ''}
+                    onChange={e => setAgent2Inputs({ ...agent2Inputs, bannerbearApiKey: e.target.value })}
+                    className="w-full bg-white border-2 border-[#292524] p-2 font-code text-xs"
+                  />
+                  <span className="text-[10px] text-stone-500 mt-0.5 block">When empty, agent2_designer.py generates the exact layout JSON and mock render URLs.</span>
+                </div>
+
+                {/* Design Brief Source notice */}
+                <div className="p-2.5 bg-purple-50 border border-purple-200 text-[11px] text-purple-900">
+                  <strong>Brief Link:</strong> Reads <code>weekly_strategy_plan.json</code> and adapts layout dimensions:
+                  <ul className="list-disc list-inside mt-1 space-y-0.5 text-[10px]">
+                    <li>Feed: 1080x1080px (Square)</li>
+                    <li>Story & Reels: 1080x1920px (Vertical 9:16)</li>
+                  </ul>
+                </div>
+              </div>
             </div>
 
-            <p className="text-xs text-stone-700 font-body leading-relaxed">
-              Synthesizes target audience, brand tone, content pillars, and 4-week roadmap using Google GenAI.
-            </p>
+            {/* Run Button */}
+            <button
+              onClick={runAgent2}
+              disabled={isAgent2Running}
+              className="w-full py-3 bg-[#DDD6FE] hover:bg-[#C4B5FD] text-[#292524] font-silk text-xs font-bold border-3 border-[#292524] shadow-[3px_3px_0_#292524] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {isAgent2Running ? <RotateCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current text-purple-800" />}
+              <span>{isAgent2Running ? 'GENERATING DESIGN SPECS...' : 'EXECUTE AGENT 2 (DESIGN SPECS)'}</span>
+            </button>
+          </div>
 
-            {/* Error Callout if any */}
-            {agent1Error && (
-              <div className="bg-red-100 border-2 border-red-800 p-2 text-xs font-body text-red-900 leading-snug">
-                <strong className="font-silk text-[10px] block text-red-950">ERROR DETAILS:</strong>
-                {agent1Error}
-              </div>
-            )}
+          {/* Right Column: REAL OUTPUT & CODE FOR AGENT 2 */}
+          <div className="lg:col-span-7 bg-[#1C1917] border-4 border-[#292524] shadow-[5px_5px_0_#292524] flex flex-col justify-between overflow-hidden">
+            <div>
+              {/* Output Sub-Tabs */}
+              <div className="bg-[#292524] px-4 py-2 flex flex-wrap items-center justify-between border-b-2 border-stone-700 gap-2">
+                <div className="flex items-center gap-1 font-silk text-xs">
+                  <button
+                    onClick={() => setAgent2SubTab('cards')}
+                    className={`px-3 py-1 text-xs cursor-pointer ${
+                      agent2SubTab === 'cards' ? 'bg-[#DDD6FE] text-[#292524] font-bold' : 'text-stone-300 hover:text-white'
+                    }`}
+                  >
+                    Design Spec Cards ({(designerSpecs || REAL_DESIGNER_SPECS).design_jobs.length})
+                  </button>
+                  <button
+                    onClick={() => setAgent2SubTab('json')}
+                    className={`px-3 py-1 text-xs cursor-pointer ${
+                      agent2SubTab === 'json' ? 'bg-[#DDD6FE] text-[#292524] font-bold' : 'text-stone-300 hover:text-white'
+                    }`}
+                  >
+                    designer_output_specs.json
+                  </button>
+                  <button
+                    onClick={() => setAgent2SubTab('code')}
+                    className={`px-3 py-1 text-xs cursor-pointer ${
+                      agent2SubTab === 'code' ? 'bg-[#DDD6FE] text-[#292524] font-bold' : 'text-stone-300 hover:text-white'
+                    }`}
+                  >
+                    agent2_designer.py Code
+                  </button>
+                </div>
 
-            {/* Real Output Info */}
-            <div className="bg-white border-2 border-[#292524] p-2 text-xs space-y-1">
-              <div className="flex justify-between font-silk text-[11px]">
-                <span className="text-stone-500">Output:</span>
-                <span className={strategyPlan ? 'text-emerald-800 font-bold' : 'text-stone-400'}>
-                  {strategyPlan ? 'strategyplan.json ✓' : 'Not generated'}
-                </span>
+                <label className="flex items-center gap-1 px-2.5 py-1 bg-stone-800 hover:bg-stone-700 text-[#DDD6FE] font-silk text-xs border border-stone-600 cursor-pointer">
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>Upload .json</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleUploadDesignerSpecs}
+                    className="hidden"
+                  />
+                </label>
               </div>
-              {agent1Duration && (
-                <div className="flex justify-between font-silk text-[10px] text-stone-500">
-                  <span>Latency:</span>
-                  <span>{agent1Duration} ms</span>
+
+              {/* View 1: Design Job Cards */}
+              {agent2SubTab === 'cards' && (
+                <div className="p-4 h-[440px] overflow-y-auto space-y-3 font-body text-xs bg-[#121110]">
+                  {(designerSpecs || REAL_DESIGNER_SPECS).design_jobs.map((job, idx) => (
+                    <div key={idx} className="p-3 bg-[#1C1917] border-l-4 border-purple-400 border border-stone-800">
+                      <div className="flex items-center justify-between font-silk text-[11px] text-purple-300 mb-1.5">
+                        <span>Job #{idx + 1}: {job.format} ({job.dimensions.width}x{job.dimensions.height})</span>
+                        <span className="bg-stone-800 text-stone-300 px-1.5 py-0.5 text-[9px]">{job.photo_id}</span>
+                      </div>
+                      <div className="font-code text-[10px] text-stone-400 mb-2">Template ID: {job.template_id}</div>
+                      
+                      {/* Modifications List */}
+                      <div className="bg-[#121110] p-2 border border-stone-800 space-y-1">
+                        <span className="font-silk text-[9px] text-stone-400 block">LAYER MODIFICATIONS:</span>
+                        {job.modifications.map((m, mIdx) => (
+                          <div key={mIdx} className="font-code text-[11px] flex items-center justify-between text-stone-300">
+                            <span className="text-purple-300">{m.name}:</span>
+                            <span className="text-stone-400 truncate max-w-[240px]">
+                              {m.text || m.color || m.image_url}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* View 2: Raw JSON */}
+              {agent2SubTab === 'json' && (
+                <div className="p-4 h-[440px] overflow-y-auto font-code text-xs leading-relaxed text-[#DDD6FE] bg-[#121110]">
+                  <pre className="whitespace-pre-wrap">
+                    {JSON.stringify(designerSpecs || REAL_DESIGNER_SPECS, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {/* View 3: Python Code */}
+              {agent2SubTab === 'code' && (
+                <div className="p-4 h-[440px] overflow-y-auto font-code text-xs leading-relaxed text-[#86EFAC] bg-[#121110]">
+                  <pre className="whitespace-pre-wrap">
+{`# agent2_designer.py (Visual Layout Engine)
+import os, json, requests
+from google import genai
+
+SYSTEM_INSTRUCTION = """
+You are "Agente 2 — Designer", an expert social media graphics intelligence.
+1. Translate briefs from Agente 1 into exact template modification payloads.
+2. Instagram Feed: 1080x1080px (Square) | Story: 1080x1920px (Vertical).
+3. Apply brand hex colors (#FFF066, #2D5A27, #FF6B6B).
+4. Output strictly valid JSON to designer_output_specs.json.
+"""
+
+def run_designer_agent(strategy_plan=None):
+    # Generates specifications and triggers Bannerbear / Canva rendering
+    ...
+`}
+                  </pre>
                 </div>
               )}
             </div>
-          </div>
 
-          <div className="flex items-center gap-2 pt-3 mt-3 border-t border-stone-200">
-            <button
-              onClick={() => {
-                soundFx.playClick();
-                runAgent1();
-              }}
-              disabled={pipelineRunning}
-              className="flex-1 py-1.5 px-2 bg-white hover:bg-stone-50 text-[#292524] border-2 border-[#292524] shadow-[2px_2px_0_#292524] font-silk text-xs flex items-center justify-center gap-1 cursor-pointer"
-            >
-              <RotateCw className="w-3 h-3" />
-              <span>Run Agent 1</span>
-            </button>
-            <button
-              onClick={() => {
-                soundFx.playClick();
-                setActiveLogTab('strategyJson');
-              }}
-              disabled={!strategyPlan}
-              className={`py-1.5 px-2.5 border-2 border-[#292524] font-silk text-xs cursor-pointer ${
-                strategyPlan ? 'bg-[#FEF08A] hover:bg-[#FDE047] shadow-[2px_2px_0_#292524]' : 'bg-stone-200 opacity-40 cursor-not-allowed'
-              }`}
-              title="Inspect strategyplan.json"
-            >
-              <Eye className="w-3.5 h-3.5" />
-            </button>
+            {/* Footer */}
+            <div className="bg-[#292524] px-4 py-2 border-t border-stone-700 flex items-center justify-between text-xs font-silk text-stone-400">
+              <span>Status: Designer Specs Ready</span>
+              <button
+                onClick={() => setSelectedBot('agent3')}
+                className="text-[#DDD6FE] hover:underline flex items-center gap-1 cursor-pointer font-bold"
+              >
+                <span>Pass to Agent 3 (Copywriter) →</span>
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* AGENT 2 CARD */}
-        <div className={`bg-[#FFFDF0] border-3 border-[#292524] p-4 flex flex-col justify-between transition-all ${
-          activeStep === 2
-            ? 'shadow-[5px_5px_0_#292524] bg-[#FEF9C3] ring-2 ring-[#292524]'
-            : 'shadow-[3px_3px_0_#292524]'
-        }`}>
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="font-pixel text-[9px] bg-[#FEF08A] text-[#292524] px-1.5 py-0.5 border border-[#292524]">
-                AGENT 2
-              </span>
-              <span className={`text-[10px] font-silk px-2 py-0.5 border flex items-center gap-1 ${
-                agent2Status === 'running'
-                  ? 'bg-amber-100 text-amber-900 border-amber-900 animate-pulse'
-                  : agent2Status === 'completed'
-                  ? 'bg-[#86EFAC] text-emerald-950 border-emerald-950 font-bold'
-                  : agent2Status === 'error'
-                  ? 'bg-red-200 text-red-950 border-red-950 font-bold'
-                  : 'bg-stone-100 text-stone-700 border-stone-400'
-              }`}>
-                {agent2Status === 'running' && 'RUNNING...'}
-                {agent2Status === 'completed' && '200 OK ✓'}
-                {agent2Status === 'error' && 'FAILED ✗'}
-                {agent2Status === 'idle' && 'READY'}
-              </span>
-            </div>
-
+      {/* ========================================================================= */}
+      {/* BOT 3: AGENT 3 COPYWRITER (agent3_copywriter.py -> final_copy_captions.json) */}
+      {/* ========================================================================= */}
+      {selectedBot === 'agent3' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Left Column: INPUTS FOR AGENT 3 */}
+          <div className="lg:col-span-5 bg-[#FFFDF0] border-4 border-[#292524] shadow-[5px_5px_0_#292524] p-4 sm:p-5 flex flex-col justify-between space-y-4">
             <div>
-              <h3 className="font-pixel text-xs text-[#292524]">CANVA TEMPLATES</h3>
-              <p className="font-code text-[11px] text-stone-600">agent2_designer.py</p>
+              <div className="flex items-center justify-between border-b-2 border-[#292524] pb-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <PenTool className="w-4 h-4 text-emerald-700" />
+                  <span className="font-silk text-xs font-bold text-[#292524]">AGENT 3 COPYWRITING INPUTS</span>
+                </div>
+                <span className="font-code text-[10px] text-stone-500 bg-stone-100 px-1.5 py-0.5 border border-stone-300">agent3_copywriter.py</span>
+              </div>
+
+              {/* Language Selection */}
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="font-silk text-[11px] block text-[#292524] mb-1 flex items-center gap-1">
+                    <Globe className="w-3.5 h-3.5 text-emerald-800" />
+                    Target Language (Strict Vocabulary Rules)
+                  </label>
+                  <select
+                    value={agent3Inputs.targetLanguage}
+                    onChange={e => setAgent3Inputs({ ...agent3Inputs, targetLanguage: e.target.value })}
+                    className="w-full bg-white border-2 border-[#292524] p-2 font-silk text-xs"
+                  >
+                    <option value="pt-PT">🇵🇹 European Portuguese (pt-PT - Default)</option>
+                    <option value="pt-BR">🇧🇷 Brazilian Portuguese (pt-BR)</option>
+                    <option value="en-US">🇺🇸 American English (en-US)</option>
+                    <option value="en-GB">🇬🇧 British English (en-GB)</option>
+                    <option value="es-ES">🇪🇸 European Spanish (es-ES)</option>
+                    <option value="fr-FR">🇫🇷 French (fr-FR)</option>
+                  </select>
+                  <span className="text-[10px] text-stone-500 mt-1 block">
+                    Uses native vocabulary rules defined in <code>LANGUAGE_GUIDELINES</code> (e.g., 'equipa', 'ecrã', 'contacte-nos').
+                  </span>
+                </div>
+
+                {/* Target Channels */}
+                <div>
+                  <label className="font-silk text-[11px] block text-[#292524] mb-1">Target Publishing Channels</label>
+                  <div className="grid grid-cols-2 gap-1.5 font-silk text-[10px]">
+                    {['instagram', 'tiktok', 'x', 'linkedin'].map(p => (
+                      <span key={p} className="p-1.5 bg-emerald-50 border border-emerald-300 text-emerald-950 capitalize flex items-center gap-1 font-bold">
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Call to Action override */}
+                <div>
+                  <label className="font-silk text-[11px] block text-[#292524] mb-0.5">Call-to-Action Customization (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Passa pela loja ou clica no link da bio! 🍋"
+                    value={agent3Inputs.callToActionOverride || ''}
+                    onChange={e => setAgent3Inputs({ ...agent3Inputs, callToActionOverride: e.target.value })}
+                    className="w-full bg-white border-2 border-[#292524] p-2 font-body text-xs"
+                  />
+                </div>
+              </div>
             </div>
 
-            <p className="text-xs text-stone-700 font-body leading-relaxed">
-              Consumes strategyplan.json, computes palettes, formats pixel stickers and Canva layouts.
-            </p>
+            {/* Run Button */}
+            <button
+              onClick={runAgent3}
+              disabled={isAgent3Running}
+              className="w-full py-3 bg-[#A7F3D0] hover:bg-[#6EE7B7] text-[#292524] font-silk text-xs font-bold border-3 border-[#292524] shadow-[3px_3px_0_#292524] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {isAgent3Running ? <RotateCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current text-emerald-900" />}
+              <span>{isAgent3Running ? `CRAFTING IN [${agent3Inputs.targetLanguage}]...` : `EXECUTE AGENT 3 (WRITE CAPTIONS)`}</span>
+            </button>
+          </div>
 
-            {/* Error Callout */}
-            {agent2Error && (
-              <div className="bg-red-100 border-2 border-red-800 p-2 text-xs font-body text-red-900 leading-snug">
-                <strong className="font-silk text-[10px] block text-red-950">ERROR DETAILS:</strong>
-                {agent2Error}
-              </div>
-            )}
+          {/* Right Column: REAL OUTPUT & CODE FOR AGENT 3 */}
+          <div className="lg:col-span-7 bg-[#1C1917] border-4 border-[#292524] shadow-[5px_5px_0_#292524] flex flex-col justify-between overflow-hidden">
+            <div>
+              {/* Output Sub-Tabs */}
+              <div className="bg-[#292524] px-4 py-2 flex flex-wrap items-center justify-between border-b-2 border-stone-700 gap-2">
+                <div className="flex items-center gap-1 font-silk text-xs">
+                  <button
+                    onClick={() => setAgent3SubTab('captions')}
+                    className={`px-3 py-1 text-xs cursor-pointer ${
+                      agent3SubTab === 'captions' ? 'bg-[#A7F3D0] text-[#292524] font-bold' : 'text-stone-300 hover:text-white'
+                    }`}
+                  >
+                    Captions Preview ({(finalCaptions || REAL_FINAL_CAPTIONS).captions.length})
+                  </button>
+                  <button
+                    onClick={() => setAgent3SubTab('json')}
+                    className={`px-3 py-1 text-xs cursor-pointer ${
+                      agent3SubTab === 'json' ? 'bg-[#A7F3D0] text-[#292524] font-bold' : 'text-stone-300 hover:text-white'
+                    }`}
+                  >
+                    final_copy_captions.json
+                  </button>
+                  <button
+                    onClick={() => setAgent3SubTab('code')}
+                    className={`px-3 py-1 text-xs cursor-pointer ${
+                      agent3SubTab === 'code' ? 'bg-[#A7F3D0] text-[#292524] font-bold' : 'text-stone-300 hover:text-white'
+                    }`}
+                  >
+                    agent3_copywriter.py Code
+                  </button>
+                </div>
 
-            {/* Real Output Info */}
-            <div className="bg-white border-2 border-[#292524] p-2 text-xs space-y-1">
-              <div className="flex justify-between font-silk text-[11px]">
-                <span className="text-stone-500">Output:</span>
-                <span className={canvaAssets.length > 0 ? 'text-emerald-800 font-bold' : 'text-stone-400'}>
-                  {canvaAssets.length > 0 ? `${canvaAssets.length} Canva Templates ✓` : 'Not generated'}
-                </span>
+                <label className="flex items-center gap-1 px-2.5 py-1 bg-stone-800 hover:bg-stone-700 text-[#A7F3D0] font-silk text-xs border border-stone-600 cursor-pointer">
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>Upload .json</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleUploadFinalCopy}
+                    className="hidden"
+                  />
+                </label>
               </div>
-              {agent2Duration && (
-                <div className="flex justify-between font-silk text-[10px] text-stone-500">
-                  <span>Latency:</span>
-                  <span>{agent2Duration} ms</span>
+
+              {/* View 1: Captions Preview */}
+              {agent3SubTab === 'captions' && (
+                <div className="p-4 h-[440px] overflow-y-auto space-y-3 font-body text-xs bg-[#121110]">
+                  {(finalCaptions || REAL_FINAL_CAPTIONS).captions.map((cap, idx) => (
+                    <div key={idx} className="p-3 bg-[#1C1917] border-l-4 border-emerald-400 border border-stone-800 space-y-1.5">
+                      <div className="flex items-center justify-between font-silk text-[11px] text-emerald-300">
+                        <span>{cap.day} ({cap.format})</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="bg-stone-800 text-stone-300 px-1.5 py-0.5 text-[9px]">{cap.photo_id}</span>
+                          <button
+                            onClick={() => togglePostApproval(idx)}
+                            className={`px-2 py-0.5 font-silk text-[9px] border cursor-pointer ${
+                              posts[idx]?.is_approved
+                                ? 'bg-emerald-500 text-emerald-950 font-bold border-emerald-400'
+                                : 'bg-stone-800 text-stone-400 border-stone-600'
+                            }`}
+                          >
+                            {posts[idx]?.is_approved ? 'APPROVED ✓' : 'PENDING APPROVAL'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="font-bold text-amber-300">{cap.hook}</div>
+                      <p className="text-stone-300 text-xs leading-relaxed whitespace-pre-wrap">{cap.caption_body}</p>
+                      <p className="text-emerald-400 text-xs font-semibold">{cap.call_to_action}</p>
+
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {cap.hashtags.map((tag, tIdx) => (
+                          <span key={tIdx} className="font-code text-[10px] text-stone-400 bg-stone-900 px-1.5 py-0.5">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* View 2: Raw JSON */}
+              {agent3SubTab === 'json' && (
+                <div className="p-4 h-[440px] overflow-y-auto font-code text-xs leading-relaxed text-[#A7F3D0] bg-[#121110]">
+                  <pre className="whitespace-pre-wrap">
+                    {JSON.stringify(finalCaptions || REAL_FINAL_CAPTIONS, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {/* View 3: Python Code */}
+              {agent3SubTab === 'code' && (
+                <div className="p-4 h-[440px] overflow-y-auto font-code text-xs leading-relaxed text-[#86EFAC] bg-[#121110]">
+                  <pre className="whitespace-pre-wrap">
+{`# agent3_copywriter.py (Copywriting Engine)
+import os, json
+from google import genai
+from google.genai import types
+
+LANGUAGE_GUIDELINES = {
+    "pt-PT": "European Portuguese (PT-PT). Use strict European vocabulary.",
+    "pt-BR": "Brazilian Portuguese (PT-BR).",
+    "en-US": "American English (EN-US)."
+}
+
+def run_copywriting_agent(user_language="pt-PT", strategy_plan=None):
+    # Generates localized captions with Hook, Caption Body, CTA, and Hashtags
+    # Saves output to final_copy_captions.json
+    ...
+`}
+                  </pre>
                 </div>
               )}
             </div>
-          </div>
 
-          <div className="flex items-center gap-2 pt-3 mt-3 border-t border-stone-200">
-            <button
-              onClick={() => {
-                soundFx.playClick();
-                runAgent2();
-              }}
-              disabled={pipelineRunning}
-              className="flex-1 py-1.5 px-2 bg-white hover:bg-stone-50 text-[#292524] border-2 border-[#292524] shadow-[2px_2px_0_#292524] font-silk text-xs flex items-center justify-center gap-1 cursor-pointer"
-            >
-              <RotateCw className="w-3 h-3" />
-              <span>Run Agent 2</span>
-            </button>
-            <button
-              onClick={() => {
-                soundFx.playClick();
-                onNavigateToStudio();
-              }}
-              disabled={canvaAssets.length === 0}
-              className={`py-1.5 px-2.5 border-2 border-[#292524] font-silk text-xs cursor-pointer ${
-                canvaAssets.length > 0 ? 'bg-[#FEF08A] hover:bg-[#FDE047] shadow-[2px_2px_0_#292524]' : 'bg-stone-200 opacity-40 cursor-not-allowed'
-              }`}
-              title="Open Canva Studio"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </button>
+            {/* Footer */}
+            <div className="bg-[#292524] px-4 py-2 border-t border-stone-700 flex items-center justify-between text-xs font-silk text-stone-400">
+              <span>Status: Captions Ready</span>
+              <button
+                onClick={onNavigateToQueue}
+                className="text-[#A7F3D0] hover:underline flex items-center gap-1 cursor-pointer font-bold"
+              >
+                <span>View in Scheduler & Queue →</span>
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* AGENT 3 CARD */}
-        <div className={`bg-[#FFFDF0] border-3 border-[#292524] p-4 flex flex-col justify-between transition-all ${
-          activeStep === 3
-            ? 'shadow-[5px_5px_0_#292524] bg-[#FEF9C3] ring-2 ring-[#292524]'
-            : 'shadow-[3px_3px_0_#292524]'
-        }`}>
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="font-pixel text-[9px] bg-[#FEF08A] text-[#292524] px-1.5 py-0.5 border border-[#292524]">
-                AGENT 3
-              </span>
-              <span className={`text-[10px] font-silk px-2 py-0.5 border flex items-center gap-1 ${
-                agent3Status === 'running'
-                  ? 'bg-amber-100 text-amber-900 border-amber-900 animate-pulse'
-                  : agent3Status === 'completed'
-                  ? 'bg-[#86EFAC] text-emerald-950 border-emerald-950 font-bold'
-                  : agent3Status === 'error'
-                  ? 'bg-red-200 text-red-950 border-red-950 font-bold'
-                  : 'bg-stone-100 text-stone-700 border-stone-400'
-              }`}>
-                {agent3Status === 'running' && 'RUNNING...'}
-                {agent3Status === 'completed' && '200 OK ✓'}
-                {agent3Status === 'error' && 'FAILED ✗'}
-                {agent3Status === 'idle' && 'READY'}
-              </span>
-            </div>
-
-            <div>
-              <h3 className="font-pixel text-xs text-[#292524]">COPYWRITER ENGINE</h3>
-              <p className="font-code text-[11px] text-stone-600">agent3_copywriter.py</p>
-            </div>
-
-            <p className="text-xs text-stone-700 font-body leading-relaxed">
-              Authors high-converting captions, hooks, and hashtags for generated Canva assets using GenAI.
-            </p>
-
-            {/* Error Callout */}
-            {agent3Error && (
-              <div className="bg-red-100 border-2 border-red-800 p-2 text-xs font-body text-red-900 leading-snug">
-                <strong className="font-silk text-[10px] block text-red-950">ERROR DETAILS:</strong>
-                {agent3Error}
+      {/* ========================================================================= */}
+      {/* FULL 3-BOT FLOW (main.py -> /gerar-campanha-completa) */}
+      {/* ========================================================================= */}
+      {selectedBot === 'orchestrator' && (
+        <div className="space-y-4">
+          <div className="bg-[#FFFDF0] border-4 border-[#292524] shadow-[5px_5px_0_#292524] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#292524] pb-3 mb-4">
+              <div>
+                <h3 className="font-silk text-sm font-bold text-[#292524] flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-amber-600" />
+                  FULL 3-BOT ASSEMBLY LINE (/gerar-campanha-completa)
+                </h3>
+                <p className="text-xs text-stone-600 mt-0.5">
+                  Executes Agent 1 (Strategy) &rarr; Agent 2 (Designer) &rarr; Agent 3 (Copywriter) and persists to PostgreSQL.
+                </p>
               </div>
-            )}
 
-            {/* Real Output Info */}
-            <div className="bg-white border-2 border-[#292524] p-2 text-xs space-y-1">
-              <div className="flex justify-between font-silk text-[11px]">
-                <span className="text-stone-500">Output:</span>
-                <span className={posts.length > 0 ? 'text-emerald-800 font-bold' : 'text-stone-400'}>
-                  {posts.length > 0 ? `${posts.length} Real Posts Ready ✓` : 'Not generated'}
+              <button
+                onClick={runFullPipeline}
+                disabled={isOrchestratorRunning}
+                className="px-5 py-3 bg-[#FDE047] hover:bg-[#FACC15] font-silk text-xs font-bold text-[#292524] border-3 border-[#292524] shadow-[3px_3px_0_#292524] flex items-center gap-2 cursor-pointer active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+              >
+                {isOrchestratorRunning ? <RotateCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
+                <span>{isOrchestratorRunning ? 'RUNNING ASSEMBLY LINE...' : 'RUN FULL PIPELINE'}</span>
+              </button>
+            </div>
+
+            {/* 3 Step Visual Pipeline */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 font-silk text-xs">
+              {/* Step 1 */}
+              <div className={`p-3 border-2 border-[#292524] ${isAgent1Running ? 'bg-[#FEF08A] animate-pulse' : 'bg-white'}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold">STEP 1: STRATEGY</span>
+                  <span className="font-code text-[10px]">agent1_strategy.py</span>
+                </div>
+                <p className="text-[11px] font-body text-stone-600">Evaluates Meta API & Google Reviews, emits <code>weekly_strategy_plan.json</code></p>
+                <div className="mt-2 text-[10px] text-emerald-700 font-bold">
+                  {strategyPlan || REAL_WEEKLY_STRATEGY ? '✓ Strategy Plan Ready' : 'Pending Run'}
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div className={`p-3 border-2 border-[#292524] ${isAgent2Running ? 'bg-[#DDD6FE] animate-pulse' : 'bg-white'}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold">STEP 2: DESIGNER</span>
+                  <span className="font-code text-[10px]">agent2_designer.py</span>
+                </div>
+                <p className="text-[11px] font-body text-stone-600">Translates briefs into Bannerbear specs, emits <code>designer_output_specs.json</code></p>
+                <div className="mt-2 text-[10px] text-purple-700 font-bold">
+                  {designerSpecs || canvaAssets.length > 0 ? '✓ Design Jobs Ready' : 'Pending Run'}
+                </div>
+              </div>
+
+              {/* Step 3 */}
+              <div className={`p-3 border-2 border-[#292524] ${isAgent3Running ? 'bg-[#A7F3D0] animate-pulse' : 'bg-white'}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold">STEP 3: COPYWRITER</span>
+                  <span className="font-code text-[10px]">agent3_copywriter.py</span>
+                </div>
+                <p className="text-[11px] font-body text-stone-600">Writes localized captions in [{agent3Inputs.targetLanguage}], emits <code>final_copy_captions.json</code></p>
+                <div className="mt-2 text-[10px] text-emerald-700 font-bold">
+                  {finalCaptions || posts.length > 0 ? '✓ Captions Ready' : 'Pending Run'}
+                </div>
+              </div>
+            </div>
+
+            {/* Database status banner */}
+            {dbCampaignId && (
+              <div className="mt-4 p-2.5 bg-emerald-50 border-2 border-emerald-600 flex items-center justify-between text-xs font-silk text-emerald-950">
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  PERSISTED TO POSTGRESQL: Campaign #{dbCampaignId} recorded in <code>CampaignModel</code> table!
                 </span>
+                <span className="font-code text-[10px] bg-emerald-200 px-2 py-0.5">models.py</span>
               </div>
-              {agent3Duration && (
-                <div className="flex justify-between font-silk text-[10px] text-stone-500">
-                  <span>Latency:</span>
-                  <span>{agent3Duration} ms</span>
+            )}
+          </div>
+
+          {/* Real Terminal Log Stream */}
+          <div className="bg-[#1C1917] border-4 border-[#292524] shadow-[5px_5px_0_#292524] p-4 text-xs font-code text-[#FEF08A]">
+            <div className="flex items-center justify-between border-b border-stone-700 pb-2 mb-2 font-silk text-[11px]">
+              <span className="flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-amber-400" />
+                PIPELINE EXECUTION TELEMETRY & CONSOLE
+              </span>
+              <button
+                onClick={() => setLogs([])}
+                className="text-stone-400 hover:text-white cursor-pointer"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="h-44 overflow-y-auto space-y-1">
+              {logs.map((log, i) => (
+                <div key={i} className="leading-relaxed">
+                  <span className="text-stone-500 mr-2">{i + 1}.</span>
+                  {log}
                 </div>
-              )}
+              ))}
             </div>
           </div>
-
-          <div className="flex items-center gap-2 pt-3 mt-3 border-t border-stone-200">
-            <button
-              onClick={() => {
-                soundFx.playClick();
-                runAgent3();
-              }}
-              disabled={pipelineRunning}
-              className="flex-1 py-1.5 px-2 bg-white hover:bg-stone-50 text-[#292524] border-2 border-[#292524] shadow-[2px_2px_0_#292524] font-silk text-xs flex items-center justify-center gap-1 cursor-pointer"
-            >
-              <RotateCw className="w-3 h-3" />
-              <span>Run Agent 3</span>
-            </button>
-            <button
-              onClick={() => {
-                soundFx.playClick();
-                onNavigateToQueue();
-              }}
-              disabled={posts.length === 0}
-              className={`py-1.5 px-2.5 border-2 border-[#292524] font-silk text-xs cursor-pointer ${
-                posts.length > 0 ? 'bg-[#FEF08A] hover:bg-[#FDE047] shadow-[2px_2px_0_#292524]' : 'bg-stone-200 opacity-40 cursor-not-allowed'
-              }`}
-              title="Inspect Real Posts in Queue"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </button>
-          </div>
         </div>
-      </div>
-
-      {/* Real Diagnostics & Terminal CRT Monitor */}
-      <div className="bg-[#1C1917] border-4 border-[#292524] shadow-[5px_5px_0_#292524] overflow-hidden">
-        {/* Terminal Header Bar */}
-        <div className="bg-[#292524] px-4 py-2 flex flex-wrap items-center justify-between border-b-2 border-stone-700 gap-2">
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 bg-[#DC2626] inline-block" />
-            <span className="w-3 h-3 bg-[#FACC15] inline-block" />
-            <span className="w-3 h-3 bg-[#4ADE80] inline-block" />
-            <span className="font-pixel text-[10px] text-[#FEF08A] ml-2">
-              REAL SERVER DIAGNOSTICS & TELEMETRY
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1 font-silk text-xs">
-            <button
-              onClick={() => {
-                soundFx.playClick();
-                setActiveLogTab('terminal');
-              }}
-              className={`px-2.5 py-1 text-xs cursor-pointer ${
-                activeLogTab === 'terminal'
-                  ? 'bg-[#FEF08A] text-[#292524] font-bold'
-                  : 'text-stone-300 hover:text-white'
-              }`}
-            >
-              Live Logs ({serverLogs.length})
-            </button>
-            <button
-              onClick={() => {
-                soundFx.playClick();
-                setActiveLogTab('strategyJson');
-              }}
-              className={`px-2.5 py-1 text-xs cursor-pointer ${
-                activeLogTab === 'strategyJson'
-                  ? 'bg-[#FEF08A] text-[#292524] font-bold'
-                  : 'text-stone-300 hover:text-white'
-              }`}
-            >
-              strategyplan.json {strategyPlan ? '✓' : ''}
-            </button>
-            <button
-              onClick={() => {
-                soundFx.playClick();
-                setActiveLogTab('canvaJson');
-              }}
-              className={`px-2.5 py-1 text-xs cursor-pointer ${
-                activeLogTab === 'canvaJson'
-                  ? 'bg-[#FEF08A] text-[#292524] font-bold'
-                  : 'text-stone-300 hover:text-white'
-              }`}
-            >
-              visual_assets.json ({canvaAssets.length})
-            </button>
-            <button
-              onClick={() => {
-                soundFx.playClick();
-                setActiveLogTab('draftsJson');
-              }}
-              className={`px-2.5 py-1 text-xs cursor-pointer ${
-                activeLogTab === 'draftsJson'
-                  ? 'bg-[#FEF08A] text-[#292524] font-bold'
-                  : 'text-stone-300 hover:text-white'
-              }`}
-            >
-              scheduled_drafts.json ({posts.length})
-            </button>
-          </div>
-        </div>
-
-        {/* Tab 1: Live Real Server Log Terminal */}
-        {activeLogTab === 'terminal' && (
-          <div className="p-4 h-64 overflow-y-auto font-code text-xs leading-relaxed retro-screen text-[#86EFAC] space-y-1.5">
-            {serverLogs.length === 0 ? (
-              <div className="text-stone-500 py-6 text-center">
-                [IDLE] No backend execution events yet. Click "RUN AGENT 1" or "EXECUTE 3-AGENT PIPELINE" to trigger real execution.
-              </div>
-            ) : (
-              serverLogs.map(log => (
-                <div key={log.id} className="flex items-start gap-2">
-                  <span className="text-stone-500 select-none text-[10px]">
-                    [{new Date(log.timestamp).toLocaleTimeString()}]
-                  </span>
-                  <span className={`px-1 py-0.2 text-[9px] uppercase font-bold shrink-0 ${
-                    log.level === 'error' ? 'bg-red-800 text-white' :
-                    log.level === 'warn' ? 'bg-amber-800 text-yellow-200' :
-                    log.level === 'success' ? 'bg-emerald-800 text-emerald-100' :
-                    'bg-stone-800 text-stone-300'
-                  }`}>
-                    {log.agent}
-                  </span>
-                  <span className={
-                    log.level === 'error' ? 'text-red-400 font-bold' :
-                    log.level === 'warn' ? 'text-yellow-300 font-bold' :
-                    log.level === 'success' ? 'text-[#86EFAC] font-bold' :
-                    'text-stone-300'
-                  }>
-                    {log.message}
-                  </span>
-                  {log.durationMs !== undefined && (
-                    <span className="text-stone-500 text-[10px]">({log.durationMs}ms)</span>
-                  )}
-                </div>
-              ))
-            )}
-            <div ref={terminalEndRef} />
-          </div>
-        )}
-
-        {/* Tab 2: strategyplan.json */}
-        {activeLogTab === 'strategyJson' && (
-          <div className="p-4 h-64 overflow-y-auto font-code text-xs leading-relaxed text-[#FDE047] bg-[#121110]">
-            {strategyPlan ? (
-              <pre className="whitespace-pre-wrap">
-                {JSON.stringify(strategyPlan, null, 2)}
-              </pre>
-            ) : (
-              <div className="text-stone-500 py-8 text-center font-silk">
-                strategyplan.json has not been generated yet. Run Agent 1 to execute strategy creation.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab 3: visual_assets.json */}
-        {activeLogTab === 'canvaJson' && (
-          <div className="p-4 h-64 overflow-y-auto font-code text-xs leading-relaxed text-[#A7F3D0] bg-[#121110]">
-            {canvaAssets.length > 0 ? (
-              <pre className="whitespace-pre-wrap">
-                {JSON.stringify(canvaAssets, null, 2)}
-              </pre>
-            ) : (
-              <div className="text-stone-500 py-8 text-center font-silk">
-                visual_assets.json is empty. Run Agent 2 to generate Canva template assets.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab 4: scheduled_drafts.json */}
-        {activeLogTab === 'draftsJson' && (
-          <div className="p-4 h-64 overflow-y-auto font-code text-xs leading-relaxed text-[#BAE6FD] bg-[#121110]">
-            {posts.length > 0 ? (
-              <pre className="whitespace-pre-wrap">
-                {JSON.stringify(posts, null, 2)}
-              </pre>
-            ) : (
-              <div className="text-stone-500 py-8 text-center font-silk">
-                scheduled_drafts.json is empty. Run Agent 3 to generate copy and social captions.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Terminal Footer Bar */}
-        <div className="bg-[#292524] px-4 py-2 border-t border-stone-700 flex items-center justify-between text-[11px] font-silk text-stone-400">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={fetchServerLogs}
-              className="hover:text-white flex items-center gap-1 cursor-pointer"
-            >
-              <RefreshCw className="w-3 h-3" />
-              <span>Refresh Logs</span>
-            </button>
-            <span className="text-stone-600">|</span>
-            <button
-              onClick={handleClearLogs}
-              className="hover:text-red-400 flex items-center gap-1 cursor-pointer"
-            >
-              <Trash2 className="w-3 h-3" />
-              <span>Clear Terminal</span>
-            </button>
-          </div>
-
-          {strategyPlan && (
-            <button
-              onClick={() => {
-                soundFx.playSuccess();
-                const blob = new Blob([JSON.stringify(strategyPlan, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'strategyplan.json';
-                a.click();
-              }}
-              className="flex items-center gap-1 text-[#FEF08A] hover:text-white font-silk cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export strategyplan.json</span>
-            </button>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 };

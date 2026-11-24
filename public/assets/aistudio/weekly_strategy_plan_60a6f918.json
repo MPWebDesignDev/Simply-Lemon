@@ -1,0 +1,51 @@
+{
+  "weekly_summary": {
+    "media_format_insights": "Reels and high-impact visual formats continue to dominate engagement, with promotional and product showcase content delivering superior engagement rates (10.1% and 8.5% respectively) compared to static carousel posts.",
+    "peak_audience_times": "Highest audience receptivity concentrates around Monday evening (18:00 - 20:00), Wednesday lunch window (12:00 - 14:00), and Saturday afternoon (15:00 - 17:00).",
+    "reputation_and_review_highlights": "Maintaining an excellent 4.8 rating across 12 new reviews, driven by strong positive customer sentiment regarding fresh artisanal ingredients, unique flavor profiles, and rapid counter service."
+  },
+  "editorial_calendar": [
+    {
+      "photo_id": "img_01.jpg",
+      "day": "Monday",
+      "scheduled_time": "18:30",
+      "format": "Feed (1080x1080px)",
+      "content_pillar": "Product Showcase",
+      "designer_brief": "Crop to 1:1 square. Apply a vibrant, high-contrast color grade emphasizing the natural yellow citrus tones and rustic wood grain texture. Add a subtle, clean brand logo watermark in the bottom-right corner.",
+      "copywriter_brief": "Write an energetic opening post for the week highlighting hand-crafted freshness and pure ingredients. Tone: Casual, upbeat, and refreshing. CTA: 'Stop by and grab your Monday squeeze! 🍋'"
+    },
+    {
+      "photo_id": "img_04.jpg",
+      "day": "Wednesday",
+      "scheduled_time": "12:30",
+      "format": "Story (1080x1920px)",
+      "content_pillar": "Atmosphere / Behind the Scenes",
+      "designer_brief": "Vertical 9:16 layout. Center the syrup-making action with dynamic framing. Reserve top 15% and bottom 20% for Instagram story stickers, poll overlays, and text containers.",
+      "copywriter_brief": "Craft quick, punchy story text demonstrating our house-made mint syrup process. Tone: Fresh and sensory. Include an interactive poll suggestion: 'Minty or Classic? 🌿🍋'"
+    },
+    {
+      "photo_id": "img_02.jpg",
+      "day": "Friday",
+      "scheduled_time": "17:00",
+      "format": "Feed (1080x1080px)",
+      "content_pillar": "Social Proof",
+      "designer_brief": "Square 1:1 framing centered on the iced beverage and genuine customer smile. Enhance lighting to evoke an inviting golden-hour cafe vibe with soft depth of field.",
+      "copywriter_brief": "Celebrate Friday kickoffs with authentic customer vibes. Quote or reference recent 5-star Google review sentiment regarding fast service and thirst-quenching taste. CTA: 'Tag your Friday refreshment buddy below! 👇'"
+    },
+    {
+      "photo_id": "img_03.jpg",
+      "day": "Saturday",
+      "scheduled_time": "15:00",
+      "format": "Feed (1080x1080px)",
+      "content_pillar": "Promotion / Special Offer",
+      "designer_brief": "Bold 1:1 promotional graphic. High-contrast typography with clear hierarchy for the weekend offer terms. Ensure core promotional text sits cleanly within the 80% inner safe area.",
+      "copywriter_brief": "High-urgency, enthusiastic weekend promo announcement capitalizing on peak Saturday footfall. Emphasize limited availability. CTA: 'Flash this post at the counter for 20% off your second cup! ⚡🍋'"
+    }
+  ],
+  "ad_strategy": {
+    "selected_post": "Saturday Promotion (img_03.jpg)",
+    "target_audience": "Local foodies, students, and young professionals aged 18-38 within a 5-mile radius of the store, interested in craft beverages, local cafes, and casual dining.",
+    "recommended_budget": "175 EUR",
+    "campaign_goal": "Store Visits / Foot Traffic Conversions"
+  }
+}

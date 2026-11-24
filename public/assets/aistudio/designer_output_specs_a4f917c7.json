@@ -1,0 +1,220 @@
+{
+  "design_jobs": [
+    {
+      "photo_id": "img_01.jpg",
+      "format": "Feed (1080x1080px)",
+      "template_id": "tmpl_bannerbear_feed_1080x1080_v1",
+      "dimensions": {
+        "width": 1080,
+        "height": 1080
+      },
+      "modifications": [
+        {
+          "name": "background_image",
+          "image_url": "img_01.jpg"
+        },
+        {
+          "name": "warm_overlay_color",
+          "color": "#FFF066"
+        },
+        {
+          "name": "warm_overlay_opacity",
+          "text": "0.12"
+        },
+        {
+          "name": "headline_text",
+          "text": "100% NATURAL & FRESHLY SQUEEZED"
+        },
+        {
+          "name": "headline_font",
+          "text": "Montserrat-Bold"
+        },
+        {
+          "name": "headline_color",
+          "color": "#2D5A27"
+        },
+        {
+          "name": "subtext",
+          "text": "Pure citrus energy to fuel your week."
+        },
+        {
+          "name": "subtext_font",
+          "text": "OpenSans-Regular"
+        },
+        {
+          "name": "subtext_color",
+          "color": "#1A1A1A"
+        },
+        {
+          "name": "logo_watermark",
+          "image_url": "https://assets.simplylemon.com/logo.png"
+        },
+        {
+          "name": "logo_position",
+          "text": "bottom-right"
+        }
+      ]
+    },
+    {
+      "photo_id": "img_04.jpg",
+      "format": "Story (1080x1920px)",
+      "template_id": "tmpl_bannerbear_story_1080x1920_v1",
+      "dimensions": {
+        "width": 1080,
+        "height": 1920
+      },
+      "modifications": [
+        {
+          "name": "background_image",
+          "image_url": "img_04.jpg"
+        },
+        {
+          "name": "headline_text",
+          "text": "HANDCRAFTED IN-HOUSE DAILY"
+        },
+        {
+          "name": "headline_font",
+          "text": "Montserrat-Bold"
+        },
+        {
+          "name": "headline_color",
+          "color": "#FFF066"
+        },
+        {
+          "name": "sticker_zone_placeholder",
+          "text": "VOTE: Mint or Classic?"
+        },
+        {
+          "name": "sticker_zone_bg",
+          "color": "#2D5A27"
+        },
+        {
+          "name": "interactive_accent_color",
+          "color": "#FF6B6B"
+        },
+        {
+          "name": "logo_image",
+          "image_url": "https://assets.simplylemon.com/logo.png"
+        },
+        {
+          "name": "logo_position",
+          "text": "top-center"
+        }
+      ]
+    },
+    {
+      "photo_id": "img_02.jpg",
+      "format": "Feed (1080x1080px)",
+      "template_id": "tmpl_bannerbear_feed_1080x1080_v1",
+      "dimensions": {
+        "width": 1080,
+        "height": 1080
+      },
+      "modifications": [
+        {
+          "name": "background_image",
+          "image_url": "img_02.jpg"
+        },
+        {
+          "name": "background_blur",
+          "text": "soft"
+        },
+        {
+          "name": "review_badge_visible",
+          "text": "true"
+        },
+        {
+          "name": "review_rating_stars",
+          "text": "★★★★★"
+        },
+        {
+          "name": "review_stars_color",
+          "color": "#FFF066"
+        },
+        {
+          "name": "review_badge_bg",
+          "color": "#2D5A27"
+        },
+        {
+          "name": "quote_text",
+          "text": "“The crispest refreshment and friendliest service in town!”"
+        },
+        {
+          "name": "quote_font",
+          "text": "Montserrat-Bold"
+        },
+        {
+          "name": "quote_color",
+          "color": "#1A1A1A"
+        },
+        {
+          "name": "logo_image",
+          "image_url": "https://assets.simplylemon.com/logo.png"
+        },
+        {
+          "name": "logo_position",
+          "text": "bottom-right"
+        }
+      ]
+    },
+    {
+      "photo_id": "img_03.jpg",
+      "format": "Feed (1080x1080px)",
+      "template_id": "tmpl_bannerbear_feed_1080x1080_v1",
+      "dimensions": {
+        "width": 1080,
+        "height": 1080
+      },
+      "modifications": [
+        {
+          "name": "background_image",
+          "image_url": "img_03.jpg"
+        },
+        {
+          "name": "promo_banner_bg",
+          "color": "#FFF066"
+        },
+        {
+          "name": "headline_text",
+          "text": "WEEKEND EXCLUSIVE OFFER"
+        },
+        {
+          "name": "headline_font",
+          "text": "Montserrat-Bold"
+        },
+        {
+          "name": "headline_color",
+          "color": "#1A1A1A"
+        },
+        {
+          "name": "cta_badge_bg",
+          "color": "#FF6B6B"
+        },
+        {
+          "name": "cta_badge_text",
+          "text": "CLAIM IN BIO"
+        },
+        {
+          "name": "cta_badge_font",
+          "text": "Montserrat-Bold"
+        },
+        {
+          "name": "cta_badge_text_color",
+          "color": "#FFFFFF"
+        },
+        {
+          "name": "secondary_accent_color",
+          "color": "#2D5A27"
+        },
+        {
+          "name": "logo_image",
+          "image_url": "https://assets.simplylemon.com/logo.png"
+        },
+        {
+          "name": "logo_position",
+          "text": "top-right"
+        }
+      ]
+    }
+  ]
+}

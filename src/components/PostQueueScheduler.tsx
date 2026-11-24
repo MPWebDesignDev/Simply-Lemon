@@ -98,19 +98,26 @@ export const PostQueueScheduler: React.FC<PostQueueSchedulerProps> = ({
 
   const handleCreatePost = () => {
     soundFx.playSuccess();
+    const captionText = newCaption || `Exciting updates from ${brandName}! Tap our link in bio.`;
+    const hashtags = ['#SimplyLemon', `#${brandName.replace(/\s+/g, '')}`, '#PixelArt'];
     const newPost: GeneratedPost = {
       id: `post_${Date.now()}`,
       templateAssetId: canvaAssets[0]?.id || 'asset_01',
+      photo_id: 'img_01.jpg',
       platform: newPlatform,
       title: newTitle || 'Custom Quick Post',
-      hook: newCaption.slice(0, 50) + '...',
-      caption: newCaption || `Exciting updates from ${brandName}! Tap our link in bio.`,
-      hashtags: ['#SimplyLemon', `#${brandName.replace(/\s+/g, '')}`, '#PixelArt'],
+      hook: captionText.slice(0, 50) + '...',
+      caption: captionText,
+      hashtags,
       callToAction: 'Check out our bio for details!',
+      day: 'Monday',
+      format: 'Feed (1080x1080px)',
+      full_text: `${captionText}\n\n${hashtags.join(' ')}`,
       bestTimeToPost: 'Scheduled manually',
       status: 'scheduled',
       scheduledDate: newSchedule ? new Date(newSchedule).toISOString() : new Date().toISOString(),
       engagementPrediction: 90,
+      is_approved: 1,
       likesCount: 0,
       commentsCount: 0,
       sharesCount: 0,
