@@ -27,3 +27,6 @@ exclude:
   - assets/aistudio/pyproject_13729a10.toml
   - assets/aistudio/uv_dcf34166.lock
   - assets/aistudio/weekly_strategy_plan_60a6f918.json
+  - assets/aistudio/image_415af7aa.png
+  - assets/aistudio/image_5b29c11a.png
+  - assets/aistudio/image_6f5d3f52.png
