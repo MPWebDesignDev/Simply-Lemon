@@ -73,7 +73,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
           <div className="relative group cursor-pointer" onClick={() => soundFx.playSuccess()}>
             <div className="w-10 h-10 sm:w-11 sm:h-11 bg-[#FDE047] border-3 border-[#292524] shadow-[2px_2px_0_#292524] flex items-center justify-center p-1 overflow-hidden group-hover:scale-105 transition-transform">
               <img
-                src="/assets/aistudio/image_0835261b.png"
+                src="./assets/aistudio/image_0835261b.png"
                 alt="Simply Lemon Mascot"
                 className="w-full h-full object-contain pixel-art drop-shadow-sm"
               />

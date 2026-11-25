@@ -224,7 +224,7 @@ export const PostQueueScheduler: React.FC<PostQueueSchedulerProps> = ({
         <div className="bg-[#FFFDF0] border-4 border-[#292524] shadow-[4px_4px_0_#292524] p-8 text-center space-y-3">
           <div className="w-14 h-14 bg-[#FEF08A] border-3 border-[#292524] shadow-[2px_2px_0_#292524] p-1 mx-auto flex items-center justify-center">
             <img
-              src="/assets/aistudio/image_0835261b.png"
+              src="./assets/aistudio/image_0835261b.png"
               alt="Lemmy"
               className="w-full h-full object-contain pixel-art"
             />

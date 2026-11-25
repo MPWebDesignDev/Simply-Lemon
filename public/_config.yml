@@ -1,0 +1,29 @@
+title: Simply Lemon
+description: Retro 8-bit AI Social Media Manager
+baseurl: "/Simply-Lemon"
+url: "https://mpwebdesigndev.github.io"
+
+# Keep Vite's compiled assets directory intact when Jekyll builds the site
+include:
+  - assets
+
+# Exclude raw non-web files from the published Jekyll site
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+  - assets/aistudio/Dockerfile_e22ccecb
+  - assets/aistudio/__init___a3a578ea.py
+  - assets/aistudio/agent1_strategy_c7729f97.py
+  - assets/aistudio/agent2_designer_7c0660c3.py
+  - assets/aistudio/agent3_copywriter_28bac576.py
+  - assets/aistudio/database_d6bfe581.py
+  - assets/aistudio/designer_output_specs_a4f917c7.json
+  - assets/aistudio/docker-compose_d2ccb84b.yml
+  - assets/aistudio/final_copy_captions_33563043.json
+  - assets/aistudio/main_f464f72f.py
+  - assets/aistudio/models_ffc4e312.py
+  - assets/aistudio/pyproject_13729a10.toml
+  - assets/aistudio/uv_dcf34166.lock
+  - assets/aistudio/weekly_strategy_plan_60a6f918.json

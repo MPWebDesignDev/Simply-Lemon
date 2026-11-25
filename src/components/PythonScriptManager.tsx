@@ -107,7 +107,7 @@ export const PythonScriptManager: React.FC<PythonScriptManagerProps> = ({ onRunP
           <div className="flex items-start gap-3">
             <div className="w-12 h-12 bg-white border-3 border-[#292524] shadow-[2px_2px_0_#292524] p-1 shrink-0 flex items-center justify-center">
               <img
-                src="/assets/aistudio/image_0835261b.png"
+                src="./assets/aistudio/image_0835261b.png"
                 alt="Lemmy Mascot"
                 className="w-full h-full object-contain pixel-art animate-pulse"
               />

@@ -196,7 +196,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         <div className="bg-[#FFFBEB] p-3 border-b-2 border-[#292524] flex items-start gap-3">
           <div className="w-12 h-12 bg-[#FEF08A] border-2 border-[#292524] shadow-[2px_2px_0_#292524] p-1 shrink-0">
             <img
-              src="/assets/aistudio/image_0835261b.png"
+              src="./assets/aistudio/image_0835261b.png"
               alt="Lemmy Mascot"
               className="w-full h-full object-contain pixel-art animate-bounce"
             />

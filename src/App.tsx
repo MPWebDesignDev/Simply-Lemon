@@ -80,7 +80,11 @@ export default function App() {
   // Real Backend Health State
   const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
 
+  const isStaticGitHubPages =
+    typeof window !== 'undefined' && window.location.hostname.endsWith('github.io');
+
   const checkHealth = async () => {
+    if (isStaticGitHubPages) return;
     try {
       const res = await fetch('/api/health');
       if (res.ok) {
@@ -93,10 +97,11 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (isStaticGitHubPages) return;
     checkHealth();
     const interval = setInterval(checkHealth, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isStaticGitHubPages]);
 
   const toggleMute = () => {
     const nextMuted = !isMuted;

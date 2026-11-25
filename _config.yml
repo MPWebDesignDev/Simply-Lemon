@@ -1,0 +1,29 @@
+title: Simply Lemon
+description: Retro 8-bit AI Social Media Manager
+baseurl: "/Simply-Lemon"
+url: "https://mpwebdesigndev.github.io"
+
+include:
+  - assets
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+  - src
+  - public
+  - dist
+  - docs
+  - server.ts
+  - package.json
+  - package-lock.json
+  - bun.lock
+  - tsconfig.json
+  - vite.config.ts
+  - metadata.json
+  - README.md
+  - .env.example
+  - .gitignore
+  - .github
+  - .aistudio
